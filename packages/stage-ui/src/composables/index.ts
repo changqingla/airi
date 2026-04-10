@@ -1,4 +1,5 @@
 export * from './audio'
+export * from './audio/realtime-pcm-player'
 export * from './canvas-alpha'
 export * from './llm-marker-parser'
 export * from './markdown'

@@ -647,6 +647,9 @@ importers:
       '@proj-airi/server-sdk-shared':
         specifier: workspace:*
         version: link:../../packages/server-sdk-shared
+      '@proj-airi/stage-shared':
+        specifier: workspace:*
+        version: link:../../packages/stage-shared
       better-auth:
         specifier: 'catalog:'
         version: 1.5.6(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(better-sqlite3@12.5.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.1(@electric-sql/pglite@0.4.1)(@opentelemetry/api@1.9.1)(@prisma/client@5.22.0)(@types/pg@8.20.0)(better-sqlite3@12.5.0)(kysely@0.28.14)(pg@8.20.0)(postgres@3.4.8))(pg@8.20.0)(react@19.2.3)(vitest@4.1.1)(vue@3.5.30(typescript@5.9.3))
@@ -686,6 +689,9 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.2.0(typescript@5.9.3)
+      ws:
+        specifier: 'catalog:'
+        version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     devDependencies:
       '@better-auth/cli':
         specifier: ^1.4.21
@@ -693,6 +699,9 @@ importers:
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0
+      '@types/ws':
+        specifier: 'catalog:'
+        version: 8.18.1
       drizzle-kit:
         specifier: 'catalog:'
         version: 0.31.10
@@ -1475,6 +1484,9 @@ importers:
       '@types/three':
         specifier: ^0.183.1
         version: 0.183.1
+      '@types/ws':
+        specifier: 'catalog:'
+        version: 8.18.1
       '@types/yauzl':
         specifier: ^2.10.3
         version: 2.10.3
@@ -1562,6 +1574,9 @@ importers:
       vue-tsc:
         specifier: ^3.2.6
         version: 3.2.6(typescript@5.9.3)
+      ws:
+        specifier: 'catalog:'
+        version: 8.20.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       yaml:
         specifier: ^2.8.3
         version: 2.8.3

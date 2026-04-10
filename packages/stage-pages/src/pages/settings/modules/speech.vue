@@ -21,7 +21,7 @@ import {
 } from '@proj-airi/ui'
 import { generateSpeech } from '@xsai/generate-speech'
 import { storeToRefs } from 'pinia'
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
@@ -181,12 +181,17 @@ async function generateTestSpeech() {
     // Convert the response to a blob and create an object URL
     audioUrl.value = URL.createObjectURL(new Blob([response]))
 
-    // Play the audio
-    setTimeout(() => {
-      if (audioPlayer.value) {
-        audioPlayer.value.play()
+    // Play the audio after the DOM updates so the element has the new source.
+    await nextTick()
+    if (audioPlayer.value) {
+      try {
+        await audioPlayer.value.play()
       }
-    }, 100)
+      catch (playError) {
+        console.error('Failed to play generated speech:', playError)
+        errorMessage.value = playError instanceof Error ? playError.message : 'Failed to start playback'
+      }
+    }
   }
   catch (error) {
     console.error('Error generating speech:', error)
@@ -632,6 +637,12 @@ function handleDeleteProvider(providerId: string) {
                 <span>Stop</span>
               </div>
             </button>
+          </div>
+          <div
+            v-if="errorMessage"
+            class="border border-red-200 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300"
+          >
+            {{ errorMessage }}
           </div>
           <audio v-if="audioUrl" ref="audioPlayer" :src="audioUrl" controls class="mt-2 w-full" />
         </div>

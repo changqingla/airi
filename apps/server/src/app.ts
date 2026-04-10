@@ -43,6 +43,7 @@ import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createV1CompletionsRoutes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
+import { createQwenTtsRealtimeWsHandlers } from './routes/qwen-tts-realtime'
 import { createStripeRoutes } from './routes/stripe'
 import { createBillingMq } from './services/billing/billing-events'
 import { createBillingService } from './services/billing/billing-service'
@@ -119,6 +120,22 @@ export async function buildApp(deps: AppDeps) {
       throw createUnauthorizedError('Invalid token')
     }
     return chatWsSetup(session.user.id)
+  }))
+
+  app.get('/ws/qwen-tts-realtime', upgradeWebSocket(async (c) => {
+    const token = c.req.query('token')
+    if (!token) {
+      throw createUnauthorizedError('Missing token')
+    }
+    const session = await resolveRequestAuth(
+      deps.auth,
+      deps.env,
+      new Headers({ Authorization: `Bearer ${token}` }),
+    )
+    if (!session?.user) {
+      throw createUnauthorizedError('Invalid token')
+    }
+    return createQwenTtsRealtimeWsHandlers(session.user.id)
   }))
 
   const builtApp = app

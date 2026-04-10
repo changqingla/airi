@@ -43,6 +43,7 @@
     "@proj-airi/drizzle-orm-browser-migrator": "^0.1.6",
     "@proj-airi/server-schema": "workspace:*",
     "@proj-airi/server-sdk-shared": "workspace:*",
+    "@proj-airi/stage-shared": "workspace:*",
     "better-auth": "catalog:",
     "cac": "catalog:",
     "drizzle-orm": "catalog:",
@@ -55,11 +56,13 @@
     "pg": "^8.20.0",
     "stripe": "^21.0.0",
     "tsx": "^4.21.0",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "ws": "catalog:"
   },
   "devDependencies": {
     "@better-auth/cli": "^1.4.21",
     "@types/pg": "^8.20.0",
+    "@types/ws": "catalog:",
     "drizzle-kit": "catalog:"
   }
 }

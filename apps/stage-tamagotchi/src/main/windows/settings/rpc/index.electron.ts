@@ -15,6 +15,7 @@ import { ipcMain } from 'electron'
 import { electronOpenDevtoolsWindow, electronOpenSettingsDevtools } from '../../../../shared/eventa'
 import { createAuthService } from '../../../services/airi/auth'
 import { createMcpServersService } from '../../../services/airi/mcp-servers'
+import { createQwenTtsRealtimeService } from '../../../services/airi/qwen-tts-realtime'
 import { createWidgetsService } from '../../../services/airi/widgets'
 import { createAutoUpdaterService } from '../../../services/electron'
 import { setupBaseWindowElectronInvokes } from '../../shared/window'
@@ -42,6 +43,7 @@ export async function setupSettingsWindowInvokes(params: {
   createAutoUpdaterService({ context, window: params.settingsWindow, service: params.autoUpdater })
   createMcpServersService({ context, manager: params.mcpStdioManager })
   createAuthService({ context, window: params.settingsWindow, windowAuthManager: params.windowAuthManager })
+  createQwenTtsRealtimeService({ context, window: params.settingsWindow })
 
   defineInvokeHandler(context, electronOpenSettingsDevtools, async () => params.settingsWindow.webContents.openDevTools({ mode: 'detach' }))
   defineInvokeHandler(context, electronOpenDevtoolsWindow, async (payload) => {

@@ -20,7 +20,19 @@ import type {
 
 import type { AliyunRealtimeSpeechExtraOptions } from './providers/aliyun/stream-transcription'
 
-import { isStageTamagotchi, isUrl } from '@proj-airi/stage-shared'
+import {
+  formatQwenTtsRealtimeModelLabel,
+  isStageTamagotchi,
+  isUrl,
+  normalizeQwenTtsRealtimeLanguageType,
+  QWEN_TTS_REALTIME_DEFAULT_LANGUAGE_TYPE,
+  QWEN_TTS_REALTIME_DEFAULT_MODEL,
+  QWEN_TTS_REALTIME_DEFAULT_VOICE,
+  QWEN_TTS_REALTIME_LANGUAGE_TYPES,
+  QWEN_TTS_REALTIME_MODELS,
+  QWEN_TTS_REALTIME_REGIONS,
+  QWEN_TTS_REALTIME_VOICES,
+} from '@proj-airi/stage-shared'
 import { computedAsync, useIntervalFn, useLocalStorage } from '@vueuse/core'
 import {
   createOpenAI,
@@ -48,6 +60,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { getProviderValidationIntervalMs, listProviders as listDefinedProviders, ProviderValidationCheck } from '../libs/providers'
+import { generateQwenTtsRealtimeSpeech } from '../libs/providers/providers/qwen-tts-realtime'
 import { getKokoroWorker } from '../workers/kokoro'
 import { getDefaultKokoroModel, KOKORO_MODELS, kokoroModelsToModelInfo } from '../workers/kokoro/constants'
 import { useAuthStore } from './auth'
@@ -67,7 +80,20 @@ const ALIYUN_NLS_REGIONS = [
   'cn-shenzhen-internal',
 ] as const
 
+const ALIBABA_COSYVOICE_COMPATIBLE_MODELS = [
+  'cosyvoice-v1',
+  'cosyvoice-v2',
+] as const
+
 type AliyunNlsRegion = typeof ALIYUN_NLS_REGIONS[number]
+
+export function normalizeAlibabaCloudVoiceCompatibleModels(compatibleModels?: readonly string[]) {
+  if (compatibleModels && compatibleModels.length > 0) {
+    return [...compatibleModels]
+  }
+
+  return [...ALIBABA_COSYVOICE_COMPATIBLE_MODELS]
+}
 
 export interface ProviderMetadata {
   id: string
@@ -1256,7 +1282,57 @@ export const useProvidersStore = defineStore('providers', () => {
       defaultOptions: () => ({
         baseUrl: 'https://unspeech.hyp3r.link/v1/',
       }),
-      createProvider: async config => createUnAlibabaCloud((config.apiKey as string).trim(), (config.baseUrl as string).trim()),
+      createProvider: async (config) => {
+        const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : ''
+        const baseUrl = typeof config.baseUrl === 'string' ? config.baseUrl.trim() : ''
+        const provider = createUnAlibabaCloud(apiKey, baseUrl) as VoiceProviderWithExtraOptions<UnAlibabaCloudOptions>
+        const originalSpeech = (provider as any).speech?.bind(provider) as ((speechModel: string, extraOptions?: Record<string, unknown>) => unknown) | undefined
+        const alibabaProvider = {
+          ...provider,
+          speech: (speechModel: string, extraOptions?: Record<string, unknown>) => {
+            if (QWEN_TTS_REALTIME_MODELS.includes(speechModel as typeof QWEN_TTS_REALTIME_MODELS[number])) {
+              return {
+                baseURL: 'https://qwen-tts-realtime.local/v1/',
+                model: speechModel,
+                fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+                  const body = typeof init?.body === 'string'
+                    ? JSON.parse(init.body)
+                    : {}
+                  const input = typeof body.input === 'string' ? body.input : ''
+                  const selectedVoice = typeof body.voice === 'string' && body.voice.trim()
+                    ? body.voice.trim()
+                    : QWEN_TTS_REALTIME_DEFAULT_VOICE
+
+                  return new Response(
+                    await generateQwenTtsRealtimeSpeech({
+                      apiKey,
+                      model: speechModel,
+                      voice: selectedVoice,
+                      region: 'cn',
+                      mode: 'server_commit',
+                      input,
+                      languageType: QWEN_TTS_REALTIME_DEFAULT_LANGUAGE_TYPE,
+                    }),
+                    {
+                      headers: {
+                        'Content-Type': 'audio/wav',
+                      },
+                    },
+                  )
+                },
+              }
+            }
+
+            if (!originalSpeech) {
+              throw new Error('Alibaba Cloud speech provider is unavailable.')
+            }
+
+            return originalSpeech(speechModel, extraOptions)
+          },
+        } as unknown as SpeechProviderWithExtraOptions
+
+        return alibabaProvider
+      },
       capabilities: {
         listVoices: async (config) => {
           const provider = createUnAlibabaCloud((config.apiKey as string).trim(), (config.baseUrl as string).trim()) as VoiceProviderWithExtraOptions<UnAlibabaCloudOptions>
@@ -1265,17 +1341,29 @@ export const useProvidersStore = defineStore('providers', () => {
             ...provider.voice(),
           })
 
-          return voices.map((voice) => {
-            return {
+          return [
+            ...voices.map((voice) => {
+              return {
+                id: voice.id,
+                name: voice.name,
+                provider: 'alibaba-cloud-model-studio',
+                compatibleModels: normalizeAlibabaCloudVoiceCompatibleModels(voice.compatible_models),
+                previewURL: voice.preview_audio_url,
+                languages: voice.languages,
+                gender: voice.labels?.gender,
+              }
+            }),
+            ...QWEN_TTS_REALTIME_VOICES.map(voice => ({
               id: voice.id,
               name: voice.name,
               provider: 'alibaba-cloud-model-studio',
-              compatibleModels: voice.compatible_models,
-              previewURL: voice.preview_audio_url,
+              compatibleModels: [...voice.compatibleModels],
+              previewURL: undefined,
               languages: voice.languages,
-              gender: voice.labels?.gender,
-            }
-          })
+              description: voice.description,
+              gender: voice.gender,
+            })),
+          ]
         },
         listModels: async () => {
           return [
@@ -1295,6 +1383,14 @@ export const useProvidersStore = defineStore('providers', () => {
               contextLength: 0,
               deprecated: false,
             },
+            ...QWEN_TTS_REALTIME_MODELS.map(model => ({
+              id: model,
+              name: formatQwenTtsRealtimeModelLabel(model),
+              provider: 'alibaba-cloud-model-studio',
+              description: 'DashScope realtime text-to-speech model.',
+              contextLength: 0,
+              deprecated: false,
+            })),
           ]
         },
       },
@@ -1387,6 +1483,166 @@ export const useProvidersStore = defineStore('providers', () => {
       },
     },
     'openrouter-audio-speech': buildOpenRouterAudioSpeechProvider(v => baseUrlValidator.value(v)),
+    'qwen-tts-realtime': {
+      id: 'qwen-tts-realtime',
+      category: 'speech',
+      tasks: ['text-to-speech'],
+      nameKey: 'settings.pages.providers.provider.qwen-tts-realtime.title',
+      name: 'Qwen TTS Realtime',
+      descriptionKey: 'settings.pages.providers.provider.qwen-tts-realtime.description',
+      description: 'dashscope.aliyuncs.com',
+      icon: 'i-lobe-icons:alibabacloud',
+      defaultOptions: () => ({
+        model: QWEN_TTS_REALTIME_DEFAULT_MODEL,
+        voice: QWEN_TTS_REALTIME_DEFAULT_VOICE,
+        region: 'cn',
+        mode: 'server_commit',
+        languageType: QWEN_TTS_REALTIME_DEFAULT_LANGUAGE_TYPE,
+        optimizeInstructions: false,
+        instructions: '',
+      }),
+      createProvider: async (config) => {
+        const toString = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+        const resolveCompatibleVoice = (selectedModel: string, requestedVoice: string) => {
+          const model = selectedModel as typeof QWEN_TTS_REALTIME_MODELS[number]
+          const exactMatch = QWEN_TTS_REALTIME_VOICES.find(voice =>
+            voice.id === requestedVoice && voice.compatibleModels.includes(model),
+          )
+          if (exactMatch) {
+            return exactMatch.id
+          }
+
+          return QWEN_TTS_REALTIME_VOICES.find(voice => voice.compatibleModels.includes(model))?.id || QWEN_TTS_REALTIME_DEFAULT_VOICE
+        }
+
+        const apiKey = toString(config.apiKey)
+        const model = QWEN_TTS_REALTIME_MODELS.includes(toString(config.model) as typeof QWEN_TTS_REALTIME_MODELS[number])
+          ? toString(config.model)
+          : QWEN_TTS_REALTIME_DEFAULT_MODEL
+        const region = QWEN_TTS_REALTIME_REGIONS.includes(toString(config.region) as typeof QWEN_TTS_REALTIME_REGIONS[number])
+          ? toString(config.region) as typeof QWEN_TTS_REALTIME_REGIONS[number]
+          : 'cn'
+        const mode = toString(config.mode) === 'commit' ? 'commit' : 'server_commit'
+        const languageType = normalizeQwenTtsRealtimeLanguageType(toString(config.languageType))
+        const instructions = toString(config.instructions)
+        const optimizeInstructions = typeof config.optimizeInstructions === 'boolean'
+          ? config.optimizeInstructions
+          : undefined
+
+        if (!apiKey) {
+          throw new Error('API key is required.')
+        }
+
+        const provider: SpeechProviderWithExtraOptions<string, Record<string, unknown>> = {
+          speech: (speechModel: string, _extraOptions?: Record<string, unknown>) => {
+            const selectedModel = QWEN_TTS_REALTIME_MODELS.includes(speechModel as typeof QWEN_TTS_REALTIME_MODELS[number])
+              ? speechModel
+              : model
+            const voice = resolveCompatibleVoice(selectedModel, toString(config.voice) || QWEN_TTS_REALTIME_DEFAULT_VOICE)
+
+            return {
+              baseURL: 'https://qwen-tts-realtime.local/v1/',
+              model: selectedModel,
+              fetch: async (_input: RequestInfo | URL, init?: RequestInit) => {
+                const body = typeof init?.body === 'string'
+                  ? JSON.parse(init.body)
+                  : {}
+                const input = typeof body.input === 'string' ? body.input : ''
+                const selectedVoice = resolveCompatibleVoice(
+                  selectedModel,
+                  typeof body.voice === 'string' && body.voice.trim() ? body.voice.trim() : voice,
+                )
+
+                return new Response(
+                  await generateQwenTtsRealtimeSpeech({
+                    apiKey,
+                    model: selectedModel,
+                    voice: selectedVoice,
+                    region,
+                    mode,
+                    input,
+                    instructions,
+                    optimizeInstructions,
+                    languageType,
+                  }),
+                  {
+                    headers: {
+                      'Content-Type': 'audio/wav',
+                    },
+                  },
+                )
+              },
+            }
+          },
+        }
+
+        return provider
+      },
+      capabilities: {
+        listModels: async () => {
+          return QWEN_TTS_REALTIME_MODELS.map((model) => {
+            return {
+              id: model,
+              name: formatQwenTtsRealtimeModelLabel(model),
+              provider: 'qwen-tts-realtime',
+              description: 'Realtime text-to-speech model from DashScope.',
+              contextLength: 0,
+              deprecated: false,
+            }
+          })
+        },
+        listVoices: async () => {
+          return QWEN_TTS_REALTIME_VOICES
+        },
+      },
+      validators: {
+        chatPingCheckAvailable: false,
+        validateProviderConfig: (config) => {
+          const errors: Error[] = []
+          const toString = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+          const resolveCompatibleVoice = (selectedModel: string, requestedVoice: string) => {
+            const model = selectedModel as typeof QWEN_TTS_REALTIME_MODELS[number]
+            const exactMatch = QWEN_TTS_REALTIME_VOICES.find(voice =>
+              voice.id === requestedVoice && voice.compatibleModels.includes(model),
+            )
+            if (exactMatch) {
+              return exactMatch.id
+            }
+
+            return QWEN_TTS_REALTIME_VOICES.find(voice => voice.compatibleModels.includes(model))?.id || QWEN_TTS_REALTIME_DEFAULT_VOICE
+          }
+
+          const apiKey = toString(config.apiKey)
+          const model = toString(config.model)
+          const voice = toString(config.voice)
+          const region = toString(config.region)
+          const mode = toString(config.mode)
+          const languageType = toString(config.languageType)
+          const modelVoice = model ? resolveCompatibleVoice(model, voice) : ''
+
+          if (!apiKey)
+            errors.push(new Error('API key is required.'))
+          if (model && !QWEN_TTS_REALTIME_MODELS.includes(model as typeof QWEN_TTS_REALTIME_MODELS[number]))
+            errors.push(new Error(`Unsupported model: ${model}`))
+          if (voice && !QWEN_TTS_REALTIME_VOICES.some(candidate => candidate.id === voice))
+            errors.push(new Error(`Unsupported voice: ${voice}`))
+          if (model && voice && voice !== modelVoice)
+            errors.push(new Error(`Voice ${voice} is not compatible with model ${model}`))
+          if (region && !QWEN_TTS_REALTIME_REGIONS.includes(region as typeof QWEN_TTS_REALTIME_REGIONS[number]))
+            errors.push(new Error(`Unsupported region: ${region}`))
+          if (mode && !['server_commit', 'commit'].includes(mode))
+            errors.push(new Error(`Unsupported mode: ${mode}`))
+          if (languageType && !QWEN_TTS_REALTIME_LANGUAGE_TYPES.includes(languageType as typeof QWEN_TTS_REALTIME_LANGUAGE_TYPES[number]))
+            errors.push(new Error(`Unsupported languageType: ${languageType}`))
+
+          return {
+            errors,
+            reason: errors.map(error => error.message).join(', '),
+            valid: errors.length === 0,
+          }
+        },
+      },
+    },
     'comet-api-speech': buildOpenAICompatibleProvider({
       id: 'comet-api-speech',
       name: 'CometAPI Speech',

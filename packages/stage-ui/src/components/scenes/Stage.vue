@@ -314,7 +314,13 @@ const speechPipeline = createSpeechPipeline<AudioBuffer>({
       const audioBuffer = await audioContext.decodeAudioData(res)
       return audioBuffer
     }
-    catch {
+    catch (error) {
+      console.warn('[Stage] Speech generation failed', {
+        provider: activeSpeechProvider.value,
+        model,
+        voice: voice.id,
+        error,
+      })
       return null
     }
   },

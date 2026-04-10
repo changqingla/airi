@@ -20,6 +20,31 @@ export function toSignedPercent(value: number): string {
   return '0%'
 }
 
+export function resolveCompatibleVoiceId(
+  voices: VoiceInfo[],
+  model: string,
+  requestedVoiceId: string,
+): string {
+  const isCompatibleWithModel = (voice: VoiceInfo) => {
+    if (!voice.compatibleModels || voice.compatibleModels.length === 0) {
+      return true
+    }
+
+    return !model || voice.compatibleModels.includes(model)
+  }
+
+  if (!requestedVoiceId) {
+    return voices.find(isCompatibleWithModel)?.id || requestedVoiceId
+  }
+
+  const currentVoice = voices.find(voice => voice.id === requestedVoiceId)
+  if (currentVoice && isCompatibleWithModel(currentVoice)) {
+    return requestedVoiceId
+  }
+
+  return voices.find(isCompatibleWithModel)?.id || requestedVoiceId
+}
+
 export const useSpeechStore = defineStore('speech', () => {
   const providersStore = useProvidersStore()
   const { allAudioSpeechProvidersMetadata } = storeToRefs(providersStore)
@@ -96,6 +121,20 @@ export const useSpeechStore = defineStore('speech', () => {
         ...availableVoices.value,
         [provider]: voices,
       }
+
+      if (provider === activeSpeechProvider.value) {
+        const compatibleVoiceId = resolveCompatibleVoiceId(
+          voices,
+          activeSpeechModel.value,
+          activeSpeechVoiceId.value,
+        )
+
+        if (compatibleVoiceId && compatibleVoiceId !== activeSpeechVoiceId.value) {
+          activeSpeechVoiceId.value = compatibleVoiceId
+          activeSpeechVoice.value = voices.find(voice => voice.id === compatibleVoiceId)
+        }
+      }
+
       return voices
     }
     catch (error) {
@@ -159,34 +198,46 @@ export const useSpeechStore = defineStore('speech', () => {
   onMounted(() => {
     loadVoicesForProvider(activeSpeechProvider.value).then(() => {
       if (activeSpeechVoiceId.value) {
-        activeSpeechVoice.value = availableVoices.value[activeSpeechProvider.value]?.find(voice => voice.id === activeSpeechVoiceId.value)
+        const voices = availableVoices.value[activeSpeechProvider.value] || []
+        const compatibleVoiceId = resolveCompatibleVoiceId(voices, activeSpeechModel.value, activeSpeechVoiceId.value)
+        activeSpeechVoice.value = voices.find(voice => voice.id === compatibleVoiceId)
+        activeSpeechVoiceId.value = compatibleVoiceId
       }
     })
   })
 
   watch([activeSpeechVoiceId, availableVoices], ([voiceId, voices]) => {
-    if (voiceId) {
-      // For OpenAI Compatible, create a custom voice object (no voices available from API)
-      if (activeSpeechProvider.value === 'openai-compatible-audio-speech') {
-        // Always update to match voiceId (in case it changed)
-        activeSpeechVoice.value = {
-          id: voiceId,
-          name: voiceId,
-          description: voiceId,
-          previewURL: '',
-          languages: [{ code: 'en', title: 'English' }],
-          provider: activeSpeechProvider.value,
-          gender: 'neutral',
-        }
+    if (activeSpeechProvider.value === 'openai-compatible-audio-speech') {
+      if (!voiceId) {
+        activeSpeechVoice.value = undefined
+        return
       }
-      else {
-        // For other providers, find voice in available voices
-        const foundVoice = voices[activeSpeechProvider.value]?.find(voice => voice.id === voiceId)
-        // Only update if we found a voice, or if activeSpeechVoice is not set
-        if (foundVoice || !activeSpeechVoice.value) {
-          activeSpeechVoice.value = foundVoice
-        }
+
+      // Always update to match voiceId (in case it changed)
+      activeSpeechVoice.value = {
+        id: voiceId,
+        name: voiceId,
+        description: voiceId,
+        previewURL: '',
+        languages: [{ code: 'en', title: 'English' }],
+        provider: activeSpeechProvider.value,
+        gender: 'neutral',
       }
+      return
+    }
+
+    const providerVoices = voices[activeSpeechProvider.value] || []
+    const compatibleVoiceId = resolveCompatibleVoiceId(providerVoices, activeSpeechModel.value, voiceId)
+    const foundVoice = compatibleVoiceId
+      ? providerVoices.find(voice => voice.id === compatibleVoiceId)
+      : undefined
+
+    if (compatibleVoiceId && compatibleVoiceId !== voiceId) {
+      activeSpeechVoiceId.value = compatibleVoiceId
+    }
+
+    if (foundVoice || !activeSpeechVoice.value) {
+      activeSpeechVoice.value = foundVoice
     }
   }, {
     immediate: true,
