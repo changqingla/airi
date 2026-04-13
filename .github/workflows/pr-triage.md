@@ -6,24 +6,26 @@ on:
         description: "Pull request number to triage manually"
         required: true
         type: string
-  pull_request:
-    types: [opened, reopened, ready_for_review]
-    forks: ["*"]
+  roles: all
 
 permissions:
   contents: read
   issues: read
   pull-requests: read
 
+checkout: false
+
 engine: copilot
 
 tools:
   github:
     toolsets: [repos, issues, pull_requests, labels]
+    min-integrity: none
 
 network: defaults
 
 safe-outputs:
+  report-failure-as-issue: false
   add-labels:
     max: 12
     target: ${{ github.event.pull_request.number || github.event.inputs.pull_request_number }}
@@ -98,7 +100,6 @@ Read the target pull request and keep only the relevant automatically-managed tr
 
 The target pull request is:
 
-- the triggering PR for `pull_request` events
 - PR `#${{ github.event.inputs.pull_request_number }}` for `workflow_dispatch`
 
 Managed labels:
